@@ -1062,6 +1062,8 @@ function viewHome(){
     <div class="greet">${greet()}${S.settings.name?', '+esc(S.settings.name):''}</div>
     <h1>Qurʼonni qalbingizga joylang</h1>
     <p class="muted">Takrorlang, tinglang, yodlang. Har kungi oz-ozdan qilingan amal — eng barakali amal.</p>
+    <div class="rec-top-h"><b>Qorilar</b><span class="row" style="gap:6px"><button class="icon-btn rs-arr" data-d="-1" aria-label="Oldingi qorilar">‹</button><button class="icon-btn rs-arr" data-d="1" aria-label="Keyingi qorilar">›</button><button class="btn sm ghost" id="recAll">Barchasi (${reciterEntries().length}) ›</button></span></div>
+    <div class="rec-strip" id="recStrip">${recStripHTML()}</div>
     <div class="quick">
       <button class="qa" data-listen="${S.last.s}/${S.last.a}"><svg><use href="#ic-play"/></svg><b>Davom ettirish</b><span>${surahName(S.last.s)} · ${S.last.a}-oyat</span></button>
       <button class="qa" id="qaVoice"><svg><use href="#ic-mic"/></svg><b>Oyatni ovozdan topish</b><span>Bir-ikki soʻz oʻqing — qaysi oyat ekanini topadi</span></button>
@@ -1099,9 +1101,19 @@ function viewHome(){
   $('#recGrid').onclick=e=>{const c=e.target.closest('[data-rec]');if(c)openReciterPage(c.dataset.rec)};
   let qt;$('#q').oninput=e=>{clearTimeout(qt);qt=setTimeout(()=>doSearch(e.target.value),450)};
   $('#qaVoice').onclick=()=>openVoiceFind();
+  $$('.rs-arr').forEach(b=>b.onclick=()=>$('#recStrip').scrollBy({left:+b.dataset.d*Math.max(300,$('#recStrip').clientWidth*.8),behavior:'smooth'}));
+  $('#recStrip').onclick=e=>{const c=e.target.closest('[data-rec]');if(c)openReciterPage(c.dataset.rec)};
+  $('#recAll').onclick=()=>{const g=$('.sec-row:last-of-type')||$('#recGrid');(document.getElementById('recHomeQ')||g).scrollIntoView({behavior:'smooth',block:'start'})};
   $('#qaDuel').onclick=()=>{T.mode='duel';go('test')};
   if(typeof renderDayAyah==='function')renderDayAyah($('#dayAyah'));
   if(typeof renderKhatm==='function')renderKhatm($('#khatmHome'),true);
+}
+/* the strip at the top of the home screen: your reciter first, then the best-known voices */
+const REC_TOP=['mq:92','qd:7','lh:1','mq:54','mq:31','qd:2','mq:133','mq:86','ms:1','bt:1','qd:9','mq:221','mq:30','mq:118','mq:112','mq:53','mq:109','mq:20'];
+function recStripHTML(){
+  const all=reciterEntries();const by=new Map(all.map(e=>[e.id,e]));const cur=S.settings.reciter;
+  const ids=[cur,...(S.recentRec||[]),...REC_TOP].filter((x,i,a)=>by.has(x)&&a.indexOf(x)===i).slice(0,16);
+  return ids.map(id=>{const e=by.get(id);return `<button class="rs ${id===cur?'on':''}" data-rec="${esc(id)}">${reciterMedal(e)}<span class="rs-n">${esc(e.n.replace(/\s*\(.*?\)/,''))}</span><span class="rs-t">${id===cur?'tanlangan':esc(REC_TAG[e.k])}</span></button>`}).join('')+`<button class="rs rs-more" onclick="document.getElementById('recAll').click()"><span class="medal rs-plus"><b>+${all.length-ids.length}</b></span><span class="rs-n">Barcha qorilar</span><span class="rs-t">pastda</span></button>`;
 }
 const REC_TAG={qd:'✦ soʻzma-soʻz',mq:'∞ uzluksiz',lh:'∞ uzluksiz',bt:'∞ uzluksiz',ms:'toʻliq sura',ea:'oyatma-oyat'};
 function renderRecGrid(q){
@@ -1758,7 +1770,7 @@ async function viewSettings(){
 
 
 /* ---------- reciter picker (tap the qori in the player) ---------- */
-function setReciter(id){
+function setReciter(id){S.recentRec=[id,...(S.recentRec||[]).filter(x=>x!==id)].slice(0,6);
   S.settings.reciter=id;save();
   const rs=$('#recSel');if(rs)rs.value=id;
   toast('Qori: '+reciterLabel(id));

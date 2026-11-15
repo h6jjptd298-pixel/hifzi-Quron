@@ -1,6 +1,6 @@
 /* Qurʼon service worker: the site opens without internet, everything once read stays readable,
    saved recitations are played from the device (the page turns them into local files itself). */
-const SHELL='quron-shell-v4',API='quron-api-v1',FONTS='quron-fonts-v1',AUDIO='quron-audio';
+const SHELL='quron-shell-v5',API='quron-api-v1',FONTS='quron-fonts-v1',AUDIO='quron-audio';
 const FILES=['./','index.html','app.css','app.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(SHELL).then(c=>Promise.all(FILES.map(f=>c.add(f).catch(()=>{})))));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>![SHELL,API,FONTS,AUDIO].includes(k)).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});

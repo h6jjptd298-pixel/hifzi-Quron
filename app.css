@@ -631,3 +631,20 @@ button.bm-i:hover{background:rgba(255,255,255,.08)}
 @keyframes kbOut{from{transform:scale(1.14) translate(var(--kx),var(--ky))}to{transform:scale(1.02) translate(0,0)}}
 @media (prefers-reduced-motion:reduce){.fx-video.vp.kb{animation:none}}
 .vid-card span em{display:block;font-style:normal;font-size:11px;opacity:.75}
+
+/* reciters at the top of the home screen */
+.rec-top-h{display:flex;align-items:center;justify-content:space-between;margin:18px 0 6px}
+.rec-top-h b{font-family:var(--serif);font-size:18px}
+.rec-strip{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:6px 2px 12px;margin:0 -2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch;mask-image:linear-gradient(90deg,#000 92%,transparent)}
+.rs{flex:0 0 auto;width:96px;display:grid;justify-items:center;gap:4px;background:none;border:0;padding:4px 0;color:inherit;scroll-snap-align:start;text-align:center}
+.rs .medal{width:72px;height:72px;transition:transform .25s,box-shadow .25s}
+.rs .medal b{font-size:21px}
+.rs:hover .medal{transform:translateY(-3px)}
+.rs.on .medal{box-shadow:0 0 0 3px var(--gold),0 8px 22px rgba(0,0,0,.35)}
+.rs-n{font-size:12.5px;font-weight:600;line-height:1.25;max-width:96px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.rs-t{font-size:10.5px;color:var(--muted)}
+.rs.on .rs-t{color:var(--gold2);font-weight:600}
+.rs-plus{--mh:42}
+@media (max-width:460px){.rs{width:84px}.rs .medal{width:64px;height:64px}.rs .medal b{font-size:19px}.rec-top-h{margin-top:12px}}
+.rs-arr{width:32px;height:32px;font-size:20px;line-height:1}
+@media (hover:none){.rs-arr{display:none}}
