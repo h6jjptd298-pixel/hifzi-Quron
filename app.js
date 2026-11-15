@@ -2543,11 +2543,22 @@ const AMB_SOUNDS=[
   ['rain','Yomgʻir','🌧'],['storm','Jala','⛈'],['wind','Shamol','🌬'],['sea','Dengiz toʻlqini','🌊'],['stream','Soy shildirashi','💧'],
   ['fire','Gulxan','🔥'],['birds','Qushlar','🐦'],['crickets','Tungi chigirtkalar','🌙'],['thunder','Uzoqdagi momaqaldiroq','🌩'],['brown','Mayin shovqin','〰']
 ];
-const AMB_VIDEOS=[ /* all 4K (3840×2160), Mixkit free licence */
-  [1610,'Yulduzli osmon'],[1704,'Koʻldagi yulduzli tun'],[2213,'Sharshara'],[22728,'Yomgʻirli oʻrmon'],[1707,'Yomgʻirdagi barglar'],
-  [5016,'Dengiz qirgʻogʻi'],[51445,'Dengizda shom'],[5002,'Koʻlda shafaq'],[4396,'Qorli togʻlar'],[3413,'Qorli oʻrmon va soy']
+/* background scenes: each is a playlist of 4K (3840×2160) Mixkit clips (free licence).
+   Clips follow each other with a slow crossfade and a gentle camera drift, in a new order every time. */
+const AMB_SCENES=[
+  ['mix','Aralash — barcha manzaralar',null],
+  ['night','Tungi osmon',[1610,1704,4148,4038,3350]],
+  ['sea','Dengiz va qirgʻoq',[5016,1954,1086,1085,1082,4119,44370,44496,51445]],
+  ['water','Sharshara va soy',[2213,572,570,529,523,2186,51662]],
+  ['mount','Togʻlar va qor',[4396,3413,4283,3371,3370,4281,4366,4132,4695]],
+  ['forest','Oʻrmon',[50847,95,41545,41401,22728,22729,1707]],
+  ['sky','Osmon va bulutlar',[51105,51102,2408,4303,4695]],
+  ['dusk','Shafaq',[5002,4998,4999,5009,44496]]
 ];
-const vidUrl=id=>`https://assets.mixkit.co/videos/${id}/${id}-2160.mp4`;
+const ALL_CLIPS=[...new Set(AMB_SCENES.flatMap(s=>s[2]||[]))];
+AMB_SCENES[0][2]=ALL_CLIPS;
+const sceneOf=v=>{if(!v)return null;if(typeof v==='string')return AMB_SCENES.find(s=>s[0]===v)||null;return AMB_SCENES.find(s=>s[0]!=='mix'&&s[2].includes(+v))||AMB_SCENES[0]};
+const vidUrl=id=>`https://assets.mixkit.co/videos/${id}/${id}-${S.settings.vidQ==='hd'?'1080':'2160'}.mp4`;
 const vidThumb=id=>`https://assets.mixkit.co/videos/${id}/${id}-360.mp4`;
 
 const AMB={ctx:null,master:null,nodes:{},timers:{},buf:{}};
@@ -2630,28 +2641,65 @@ function ambSetMaster(v){S.settings.ambMaster=v;save();const s=$('#fxBVol');if(s
 function ambActive(){return Object.keys(AMB.nodes)}
 function ambStopAll(){ambActive().forEach(ambStop)}
 
-/* background video */
+/* background video: two layers that crossfade from clip to clip */
+const VP={els:null,cur:0,order:[],pos:0,scene:null,timer:0,watch:0};
+function vpEls(){
+  if(VP.els)return VP.els;const a=$('#fxVideo');if(!a)return null;
+  let b=document.getElementById('fxVideo2');
+  if(!b){b=a.cloneNode(false);b.id='fxVideo2';a.after(b)}
+  for(const v of [a,b]){v.loop=false;v.muted=true;v.playsInline=true;v.setAttribute('playsinline','');v.classList.add('vp')}
+  return VP.els=[a,b];
+}
+function vpShuffle(list,avoid){const o=list.slice();for(let i=o.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[o[i],o[j]]=[o[j],o[i]]}
+  if(o.length>1&&o[0]===avoid)[o[0],o[1]]=[o[1],o[0]];return o}
+function vpNextId(){if(VP.pos>=VP.order.length){VP.order=vpShuffle(VP.scene[2],VP.order[VP.order.length-1]);VP.pos=0}return VP.order[VP.pos++]}
+function vpLoad(el,id){el.dataset.id=id;delete el.dataset.again;el.src=vidUrl(id);el.preload='auto';el.load();
+  el.style.setProperty('--kx',(Math.random()*4-2).toFixed(2)+'%');el.style.setProperty('--ky',(Math.random()*4-2).toFixed(2)+'%');el.classList.toggle('kb-out',Math.random()<.5)}
+function vpShow(el){
+  const els=vpEls();const other=els[0]===el?els[1]:els[0];
+  el.classList.remove('kb');void el.offsetWidth;el.classList.add('kb');
+  el.play().catch(()=>{});el.classList.add('on');other.classList.remove('on');VP.cur=els.indexOf(el);
+  /* get the following clip ready on the hidden layer once this one fades in */
+  clearTimeout(VP.timer);VP.timer=setTimeout(()=>{if(VP.scene){other.pause();vpLoad(other,vpNextId())}},2600);
+}
+function vpTick(){
+  if(!VP.scene||!$('#focus').classList.contains('has-video'))return;
+  const els=vpEls();const v=els[VP.cur],n=els[1-VP.cur];
+  if(v.paused&&!v.ended&&v.readyState>2&&!document.hidden)v.play().catch(()=>{});
+  const left=v.duration?v.duration-v.currentTime:Infinity;
+  /* begin the next clip 2.4 s before this one ends; a short clip is played twice first */
+  /* a clip shorter than 12 s plays twice before moving on */
+  if(v.duration&&v.duration<12&&!v.dataset.again&&left<0.25){v.dataset.again='1';v.currentTime=0;v.play().catch(()=>{});return}
+  if(left<2.4&&!VP.fading&&(v.duration>=12||v.dataset.again)){
+    if(n.readyState>=3&&n.dataset.id){VP.fading=true;n.currentTime=0;vpShow(n);setTimeout(()=>{VP.fading=false;v.pause()},2600)}
+    else if(v.ended||left<0.3){v.currentTime=0;v.play().catch(()=>{})}
+  }
+}
 function setRelaxVideo(id){
-  S.settings.relaxVideo=id;save();
-  const v=$('#fxVideo');if(!v)return;
-  if(!id){v.pause();v.removeAttribute('src');v.load();$('#focus').classList.remove('has-video');return}
-  if(v.dataset.id!==String(id)){v.dataset.id=id;v.src=vidUrl(id);}
-  $('#focus').classList.add('has-video');v.autoplay=true;
-  v.oncanplay=()=>{if($('#focus').classList.contains('has-video')&&v.paused)v.play().catch(()=>{})};
-  v.play().catch(()=>{});
+  const sc=sceneOf(id);S.settings.relaxVideo=sc?sc[0]:0;save();
+  const els=vpEls();if(!els)return;
+  clearTimeout(VP.timer);clearInterval(VP.watch);
+  if(!sc){VP.scene=null;for(const v of els){v.pause();v.removeAttribute('src');v.load();v.classList.remove('on')}$('#focus').classList.remove('has-video');return}
+  $('#focus').classList.add('has-video');
+  if(VP.scene!==sc||!els.some(v=>v.getAttribute('src'))){
+    VP.scene=sc;VP.order=vpShuffle(sc[2]);VP.pos=0;VP.fading=false;
+    const el=els[1-VP.cur];vpLoad(el,vpNextId());
+    const go=()=>{el.removeEventListener('canplay',go);if(VP.scene===sc)vpShow(el)};el.addEventListener('canplay',go);
+  }else els[VP.cur].play().catch(()=>{});
+  VP.watch=setInterval(vpTick,250);
 }
 function setNoText(on){S.settings.relaxNoText=on;save();$('#focus').classList.toggle('notext',on);const c=$('#rxNoText');if(c)c.checked=on;if(typeof fxSubsApply==='function')fxSubsApply()}
 
 function openRelaxSheet(){
-  const act=new Set(ambActive());const vol=S.settings.ambVol||{};const vid=S.settings.relaxVideo||0;
+  const act=new Set(ambActive());const vol=S.settings.ambVol||{};const vsc=sceneOf(S.settings.relaxVideo);const vid=vsc?vsc[0]:0;
   const snd=AMB_SOUNDS.map(([id,n,ic])=>`<div class="amb-row ${act.has(id)?'on':''}" data-id="${id}">
       <button class="amb-tg" data-id="${id}" aria-pressed="${act.has(id)}"><span class="amb-ic">${ic}</span>${esc(n)}</button>
       <input type="range" min="0" max="1" step="0.02" value="${vol[id]??0.6}" data-id="${id}" aria-label="${esc(n)} ovoz balandligi"></div>`).join('');
-  const vids=`<button class="vid-card ${!vid?'on':''}" data-v="0"><span>Videosiz</span></button>`+AMB_VIDEOS.map(([id,n])=>`<button class="vid-card ${vid===id?'on':''}" data-v="${id}"><video muted playsinline preload="none" src="${vidThumb(id)}#t=2"></video><span>${esc(n)}</span></button>`).join('');
+  const vids=`<button class="vid-card ${!vid?'on':''}" data-v="0"><span>Videosiz</span></button>`+AMB_SCENES.map(([k,n,l])=>`<button class="vid-card ${vid===k?'on':''}" data-v="${k}"><video muted playsinline preload="none" src="${vidThumb(k==='mix'?1704:l[0])}#t=2"></video><span>${esc(n)} <em>${l.length} manzara</em></span></button>`).join('');
   openSheet('Tinch tinglash',`
-    <p class="muted small">Tilovatni subtitrsiz, tabiat ovozlari va jonli manzara fonida tinglang. Ovozlar qurilmaning oʻzida yaratiladi — internet sarflamaydi. Videolar 4K sifatda (har biri 40–115 MB), shuning uchun Wi-Fi tavsiya etiladi.</p>
+    <p class="muted small">Tilovatni subtitrsiz, tabiat ovozlari va jonli manzara fonida tinglang. Ovozlar qurilmaning oʻzida yaratiladi — internet sarflamaydi. Har bir fon bir necha manzaradan iborat: ular har safar yangi tartibda, sekin almashinib boradi. 4K videolar katta (har biri 20–170 MB) — mobil internetda HD ni tanlang.</p>
     <label class="switch-row"><input type="checkbox" id="rxNoText" ${S.settings.relaxNoText!==false?'checked':''}> <span>Subtitrsiz — faqat manzara va tilovat</span></label>
-    <div class="rec-grp">Fon videosi</div><div class="vid-grid">${vids}</div>
+    <div class="rec-grp row spread">Fon manzarasi <span class="seg" id="rxQ"><button data-q="4k" class="${S.settings.vidQ!=='hd'?'on':''}">4K</button><button data-q="hd" class="${S.settings.vidQ==='hd'?'on':''}">HD · tejamkor</button></span></div><div class="vid-grid">${vids}</div>
     <div class="rec-grp">Tabiat ovozlari <span class="muted">(bir nechtasini birga yoqsa boʻladi)</span></div>
     <div class="amb-list">${snd}</div>
     <div class="amb-master"><span>Umumiy fon ovozi</span><input type="range" id="ambM" min="0" max="1" step="0.02" value="${S.settings.ambMaster??0.7}"></div>
@@ -2661,14 +2709,15 @@ function openRelaxSheet(){
     const sync=()=>{const a=new Set(ambActive());$$('.amb-row',b).forEach(r=>{const on=a.has(r.dataset.id);r.classList.toggle('on',on);r.querySelector('.amb-tg').setAttribute('aria-pressed',on)})};
     b.onclick=e=>{
       const tg=e.target.closest('.amb-tg');if(tg){const id=tg.dataset.id;AMB.nodes[id]?ambStop(id):ambStart(id);saveAmb();sync();return}
-      const vc=e.target.closest('.vid-card');if(vc){$$('.vid-card',b).forEach(x=>x.classList.remove('on'));vc.classList.add('on');enterRelax();setRelaxVideo(+vc.dataset.v);return}
+      const vc=e.target.closest('.vid-card');if(vc){$$('.vid-card',b).forEach(x=>x.classList.remove('on'));vc.classList.add('on');enterRelax();setRelaxVideo(vc.dataset.v==='0'?0:vc.dataset.v);return}
+      const q=e.target.closest('[data-q]');if(q){S.settings.vidQ=q.dataset.q;save();$$('#rxQ button',b).forEach(x=>x.classList.toggle('on',x===q));const cur=S.settings.relaxVideo;if(cur){VP.scene=null;setRelaxVideo(cur)}return}
     };
     b.oninput=e=>{const r=e.target;if(r.id==='ambM')return ambSetMaster(+r.value);if(r.dataset.id)ambSetVol(r.dataset.id,+r.value)};
     $('#rxNoText',b).onchange=e=>{enterRelax();setNoText(e.target.checked)};
-    const preset=(snds,v)=>{ambStopAll();snds.forEach(ambStart);saveAmb();sync();enterRelax();setRelaxVideo(v);$$('.vid-card',b).forEach(x=>x.classList.toggle('on',+x.dataset.v===v))};
-    $('#rxPreset1',b).onclick=()=>preset(['rain','thunder'],2846);
-    $('#rxPreset2',b).onclick=()=>preset(['sea','wind'],5016);
-    $('#rxPreset3',b).onclick=()=>preset(['birds','stream'],50847);
+    const preset=(snds,v)=>{ambStopAll();snds.forEach(ambStart);saveAmb();sync();enterRelax();setRelaxVideo(v);$$('.vid-card',b).forEach(x=>x.classList.toggle('on',x.dataset.v===String(v)))};
+    $('#rxPreset1',b).onclick=()=>preset(['rain','thunder'],'forest');
+    $('#rxPreset2',b).onclick=()=>preset(['sea','wind'],'sea');
+    $('#rxPreset3',b).onclick=()=>preset(['birds','stream'],'water');
     $('#rxOff',b).onclick=()=>{ambStopAll();saveAmb();sync();setRelaxVideo(0);$$('.vid-card',b).forEach(x=>x.classList.toggle('on',x.dataset.v==='0'))};
     /* light previews: load first frame only when visible */
     $$('.vid-card video',b).forEach(v=>{v.preload='metadata'});
@@ -2681,7 +2730,7 @@ function enterRelax(){
   setNoText(S.settings.relaxNoText!==false);
   if(S.settings.relaxVideo&&!$('#focus').classList.contains('has-video'))setRelaxVideo(S.settings.relaxVideo);
 }
-function exitRelax(){$('#focus').classList.remove('relax','notext','has-video','subs','trs');const v=$('#fxVideo');if(v){v.pause()}}
+function exitRelax(){$('#focus').classList.remove('relax','notext','has-video','subs','trs');clearInterval(VP.watch);clearTimeout(VP.timer);(vpEls()||[]).forEach(v=>v.pause())}
 
 /* auto-hide controls while relaxing */
 (function(){let t=null;const wake=()=>{const f=$('#focus');if(!f)return;f.classList.remove('idle');clearTimeout(t);

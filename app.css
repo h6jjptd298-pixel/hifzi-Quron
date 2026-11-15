@@ -620,3 +620,14 @@ button.bm-i:hover{background:rgba(255,255,255,.08)}
 #bkStage .qw{cursor:pointer}
 #bkStage .qw.hlc,.bk-v.hlc,.bk-t.hlc{background:color-mix(in srgb,var(--hl) 42%,transparent)}
 #bkStage .qw.sel,.bk-v.sel,.bk-t.sel{background:rgba(120,170,220,.42)}
+
+/* background scenes: crossfading layers with a slow camera drift */
+.fx-video.vp{opacity:0;transition:opacity 2.4s ease;transform-origin:50% 50%;will-change:opacity,transform}
+.focus.has-video .fx-video.vp{opacity:0}
+.focus.has-video .fx-video.vp.on{opacity:1}
+.fx-video.vp.kb{animation:kbIn 30s linear forwards}
+.fx-video.vp.kb.kb-out{animation-name:kbOut}
+@keyframes kbIn{from{transform:scale(1.02) translate(0,0)}to{transform:scale(1.14) translate(var(--kx),var(--ky))}}
+@keyframes kbOut{from{transform:scale(1.14) translate(var(--kx),var(--ky))}to{transform:scale(1.02) translate(0,0)}}
+@media (prefers-reduced-motion:reduce){.fx-video.vp.kb{animation:none}}
+.vid-card span em{display:block;font-style:normal;font-size:11px;opacity:.75}
