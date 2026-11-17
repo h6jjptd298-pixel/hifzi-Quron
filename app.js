@@ -2024,18 +2024,28 @@ function viewBook(id,page){
   $('#bkMarks').onclick=e=>{const c=e.target.closest('[data-p]');if(c)bkGo(+c.dataset.p)};
   $('#bkPlay').onclick=async()=>{const f=await bkFirstVerse(BK.page);if(f)startReading(f.s,f.a)};
   $('#bkStage').style.setProperty('--bkfs',S.books.fs||0);$('#bkStage').classList.toggle('no-ar',b.kind==='tr'&&!S.books.ar);
-  /* tap an ayah → menu (listen as many times as you like, select several ayahs, highlight, note…) */
-  $('#bkStage').onclick=e=>{
+  /* press and hold an ayah → compact menu; keep holding and slide the finger → several ayahs */
+  const stg=$('#bkStage');
+  stg.onclick=e=>{
+    if(Date.now()-(LP.doneAt||0)<600)return;
     const q=e.target.closest('.qw,.bk-v,.bk-t');if(!q||!q.dataset.vk){bkMenuClose();return}
     const [s,a]=q.dataset.vk.split(':').map(Number);
-    if((BK.pick||e.shiftKey)&&BK.sel&&BK.sel.s===s){const f=Math.min(BK.sel.from,a),t=Math.max(BK.sel.to,a);BK.sel={s,from:f,to:t}}
-    else{if(BK.pick&&BK.sel&&BK.sel.s!==s)toast('Bir nechta oyat bitta sura ichidan tanlanadi');BK.sel={s,from:a,to:a}}
-    BK.pick=false;S.last={s,a:BK.sel.from};save();bkSelPaint();bkMenuOpen(e.clientX,e.clientY);
+    if((BK.pick||e.shiftKey)&&BK.sel&&BK.sel.s===s){const f=Math.min(BK.sel.from,a),t=Math.max(BK.sel.to,a);BK.sel={s,from:f,to:t};BK.pick=false;bkSelPaint();bkMiniOpen();return}
+    if(!$('#bkMenu').hidden){bkMenuClose();return}
+    if(!LP.hinted){LP.hinted=1;toast('Oyatni bosib turing — menyu chiqadi. Barmoqni surib bir nechta oyatni tanlang',3800)}
   };
+  stg.addEventListener('contextmenu',e=>{if(e.target.closest('[data-vk]')){e.preventDefault();if(!LP.active&&Date.now()-(LP.doneAt||0)>600){lpBegin(e.target,e.clientX,e.clientY,true)}}});
+  stg.addEventListener('touchstart',e=>{if(e.touches.length===1)lpBegin(e.target,e.touches[0].clientX,e.touches[0].clientY)},{passive:true});
+  stg.addEventListener('touchmove',e=>{const t=e.touches[0];if(lpMove(t.clientX,t.clientY))e.preventDefault()},{passive:false});
+  stg.addEventListener('touchend',()=>lpEnd(),{passive:true});
+  stg.addEventListener('touchcancel',()=>lpEnd(true),{passive:true});
+  stg.addEventListener('mousedown',e=>{if(e.button===0)lpBegin(e.target,e.clientX,e.clientY)});
+  if(!LP.wired){LP.wired=1;addEventListener('mousemove',e=>{if(LP.t||LP.active){if(lpMove(e.clientX,e.clientY))e.preventDefault()}});
+    addEventListener('mouseup',()=>{if(LP.t||LP.active)lpEnd()})}
   /* swipe */
-  let sx=0,sy=0;const st=$('#bkStage');
+  let sx=0,sy=0;const st=stg;
   st.addEventListener('touchstart',e=>{sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
-  st.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.8)step((dx>0?1:-1)*(rtl?1:-1))},{passive:true});
+  st.addEventListener('touchend',e=>{if(Date.now()-(LP.doneAt||0)<600)return;const dx=e.changedTouches[0].clientX-sx,dy=e.changedTouches[0].clientY-sy;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.8)step((dx>0?1:-1)*(rtl?1:-1))},{passive:true});
   bkRender(0);
 }
 /* repeat without leaving the book */
@@ -2130,6 +2140,72 @@ addEventListener('keydown',e=>{
 });
 addEventListener('resize',()=>{clearTimeout(BK.rt);BK.rt=setTimeout(()=>{if(UI.route==='kitob'&&BK.id&&bkSpread(BOOK_BY[BK.id])!==(BK.n===2))bkRender(0)},250)});
 
+
+/* ---------- long press + drag selection ---------- */
+const LP={t:0,active:false,s:0,a:0,x:0,y:0,doneAt:0,hinted:0,raf:0,ly:0};
+function lpAyah(el){const q=el&&el.closest&&el.closest('#bkStage [data-vk]');if(!q)return null;const [s,a]=q.dataset.vk.split(':').map(Number);return {s,a}}
+function lpBegin(target,x,y,instant){
+  clearTimeout(LP.t);LP.t=0;const v=lpAyah(target);if(!v)return;
+  LP.s=v.s;LP.a=v.a;LP.x=x;LP.y=y;LP.ly=y;
+  const go=()=>{LP.t=0;LP.active=true;try{navigator.vibrate&&navigator.vibrate(12)}catch(e){}
+    bkMenuClose();BK.pick=false;BK.sel={s:LP.s,from:LP.a,to:LP.a};bkSelPaint();$('#bkStage').classList.add('lp-on');
+    if(instant)lpEnd()};
+  if(instant)go();else LP.t=setTimeout(go,420);
+}
+function lpMove(x,y){
+  if(LP.t){if(Math.hypot(x-LP.x,y-LP.y)>10){clearTimeout(LP.t);LP.t=0}return false}
+  if(!LP.active)return false;
+  LP.ly=y;lpPick(x,y);
+  if(!LP.raf&&(y<90||y>innerHeight-90))LP.raf=requestAnimationFrame(lpScroll);
+  return true;
+}
+function lpPick(x,y){
+  const v=lpAyah(document.elementFromPoint(x,y));if(!v)return;
+  if(v.s!==LP.s){if(!LP.warned){LP.warned=1;toast('Bir nechta oyat bitta sura ichidan tanlanadi')}return}
+  const f=Math.min(LP.a,v.a),t=Math.max(LP.a,v.a);
+  if(!BK.sel||BK.sel.from!==f||BK.sel.to!==t){BK.sel={s:LP.s,from:f,to:t};bkSelPaint();try{navigator.vibrate&&navigator.vibrate(4)}catch(e){}}
+}
+function lpScroll(){
+  LP.raf=0;if(!LP.active)return;const y=LP.ly;
+  const d=y<90?-Math.ceil((90-y)/6):y>innerHeight-90?Math.ceil((y-innerHeight+90)/6):0;
+  if(d){scrollBy(0,d);lpPick(LP.x,y);LP.raf=requestAnimationFrame(lpScroll)}
+}
+function lpEnd(cancel){
+  clearTimeout(LP.t);LP.t=0;if(!LP.active)return;
+  LP.active=false;LP.warned=0;LP.doneAt=Date.now();$('#bkStage')&&$('#bkStage').classList.remove('lp-on');
+  if(cancel&&!BK.sel)return;
+  const z=BK.sel;if(z){S.last={s:z.s,a:z.from};save();bkMiniOpen()}
+}
+function bkSelRect(){
+  const els=$$('#bkStage .sel');let r=null;
+  for(const el of els){const b=el.getBoundingClientRect();if(b.bottom<0||b.top>innerHeight||!b.width)continue;
+    r=r?{left:Math.min(r.left,b.left),right:Math.max(r.right,b.right),top:Math.min(r.top,b.top),bottom:Math.max(r.bottom,b.bottom)}:{left:b.left,right:b.right,top:b.top,bottom:b.bottom}}
+  return r||{left:innerWidth/2,right:innerWidth/2,top:innerHeight/2,bottom:innerHeight/2};
+}
+/* compact pop-up: only the most needed actions */
+function bkMiniOpen(){
+  const m=$('#bkMenu'),z=BK.sel;if(!m||!z)return;
+  const one=z.from===z.to,vk=z.s+':'+z.from,rep=S.books.rep??1,cur=one?S.hl[vk]:null;
+  const ic=(i,t,k,extra='')=>`<button class="bmi" data-m="${k}" ${extra}><svg><use href="#${i}"/></svg><span>${t}</span></button>`;
+  m.classList.add('mini');
+  m.innerHTML=`<div class="bmi-t">${surahName(z.s)} · ${one?z.from+'-oyat':z.from+'–'+z.to+' ('+(z.to-z.from+1)+' oyat)'}</div>
+    <div class="bmi-row">
+      ${ic('ic-play',one?'Tinglash':'Tinglash','play','style="--c:var(--gold,#c9a43a)"')}
+      <button class="bmi" data-m="cyc"><b class="bmi-n">${rep?rep+'×':'∞'}</b><span>Takror</span></button>
+      <button class="bmi" data-m="hlrow"><i class="bmi-dot" style="background:${cur?HL_COLORS[cur]:'linear-gradient(135deg,#f2c14e,#7fd39a,#7db8ff,#ff9ec4)'}"></i><span>Ajratish</span></button>
+      ${ic('ic-tafsir','Tarjima','tr')}
+      ${ic('ic-share','Ulashish','share')}
+      ${ic('ic-more','Yana','more')}
+    </div>
+    <div class="bmi-cols" hidden>${Object.entries(HL_COLORS).map(([k,c])=>`<button class="bm-c ${cur===k?'on':''}" data-hl="${k}" style="background:${c}" aria-label="${k} rang bilan ajratish"></button>`).join('')}<button class="bm-c off" data-hl="" aria-label="Ajratishni olib tashlash">×</button></div>`;
+  m.hidden=false;BK.menuAt=Date.now();bkMiniPlace();
+}
+function bkMiniPlace(){
+  const m=$('#bkMenu');if(!m||m.hidden)return;const r=bkSelRect();const w=m.offsetWidth,h=m.offsetHeight;
+  const cx=(r.left+r.right)/2;const left=clamp(cx-w/2,8,innerWidth-w-8);
+  let top=r.top-h-12;if(top<8)top=r.bottom+12;if(top+h>innerHeight-8)top=clamp(innerHeight-h-90,8,innerHeight-h-8);
+  m.style.left=left+'px';m.style.top=top+'px';
+}
 /* ---------- ayah menu in the book ---------- */
 const HL_COLORS={sariq:'#f2c14e',yashil:'#7fd39a',moviy:'#7db8ff',pushti:'#ff9ec4',binafsha:'#bda6ff'};
 if(!S.hl)S.hl={};
@@ -2143,7 +2219,7 @@ function bkApplyHl(){
 }
 function bkMenuClose(){const m=$('#bkMenu');if(m)m.hidden=true}
 function bkMenuOpen(x,y){
-  const m=$('#bkMenu'),z=BK.sel;if(!m||!z)return;
+  const m=$('#bkMenu'),z=BK.sel;if(!m||!z)return;m.classList.remove('mini');
   const one=z.from===z.to,vk=z.s+':'+z.from,rep=S.books.rep??1;
   const cur=one?S.hl[vk]:null;
   m.innerHTML=`<div class="bm-title">${surahName(z.s)} · ${one?z.from+'-oyat':z.from+'–'+z.to+'-oyatlar'}</div>
@@ -2170,7 +2246,11 @@ document.addEventListener('click',e=>{
   const r=e.target.closest('[data-rep]');if(r){S.books.rep=+r.dataset.rep;save();$$('#bkMenu [data-rep]').forEach(b=>b.classList.toggle('on',b===r));return}
   const c=e.target.closest('[data-hl]');
   if(c){for(let a=z.from;a<=z.to;a++){if(c.dataset.hl)S.hl[z.s+':'+a]=c.dataset.hl;else delete S.hl[z.s+':'+a]}save();bkApplyHl();bkMenuClose();toast(c.dataset.hl?'Oyat ajratildi':'Ajratish olib tashlandi');return}
-  const it=e.target.closest('[data-m]');if(!it)return;const k=it.dataset.m;bkMenuClose();
+  const it=e.target.closest('[data-m]');if(!it)return;const k=it.dataset.m;
+  if(k==='cyc'){const i=BK_REPS.indexOf(S.books.rep??1);S.books.rep=BK_REPS[(i+1)%BK_REPS.length];save();it.querySelector('.bmi-n').textContent=S.books.rep?S.books.rep+'×':'∞';return}
+  if(k==='hlrow'){const c=$('#bkMenu .bmi-cols');c.hidden=!c.hidden;bkMiniPlace();return}
+  if(k==='more'){const r=bkSelRect();bkMenuOpen((r.left+r.right)/2,r.bottom);return}
+  bkMenuClose();
   const rep=S.books.rep??1;
   if(k==='play'){
     /* one ayah: that ayah N times; several: the whole selection N times, flowing from ayah to ayah */
@@ -2178,7 +2258,7 @@ document.addEventListener('click',e=>{
     toast(`${one?z.from+'-oyat':z.from+'–'+z.to+'-oyatlar'} · ${rep?rep+' marta':'toʻxtatguningizcha'}`);
   }
   else if(k==='from')startReading(z.s,z.from);
-  else if(k==='pick'){BK.pick=true;toast('Endi oxirgi oyatni bosing — orasidagi hamma oyat tanlanadi',3500)}
+  else if(k==='pick'){BK.pick=true;toast('Endi oxirgi oyatni bosing — orasidagi hamma oyat tanlanadi. Yoki oyatni bosib turib barmoqni suring',4000)}
   else if(k==='set')openRepeat({s:z.s,from:z.from,to:z.to});
   else if(k==='note')openNote(vk);
   else if(k==='tr')bkShowTrans(z);
